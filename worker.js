@@ -14,4 +14,3 @@ setInterval(() =>
 	let resultArray = JSON.parse(arrayFromFile).push(rand);
 	fs.writeFileSync(process.argv[2], JSON.stringify(resultArray));
 }, process.argv[3]);
-

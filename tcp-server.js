@@ -1,10 +1,20 @@
 const net = require('net');
 const fs = require('fs');
+const child_process = require("child_process");
+
+let WorkerTCP = function(id, startedOn, numbers) {
+	this.id = id;
+	this.startedOn = startedOn;
+	this.numbers = numbers;
+};
+
+
 
 const server = net.createServer((client) => {
 	console.log('Client connected');
-	client.identifier = Date.now() + seed++; // unique id
-	let filename = `log/client_${client.identifier}.log`;
+	let max = 10000;
+	client.identifier = Math.floor(Math.random() * max); // unique id
+	let filename = `client_${client.identifier}.json`;
 	fs.writeFile(filename, "", (err) => {
 		if (err)
 		{
@@ -14,11 +24,10 @@ const server = net.createServer((client) => {
 
 	client.setEncoding('utf8');
 	let isConnected = false;
-	let isFiles = false;
-	let isRemote = false;
+	let workers = [];
+
 	client.on('end', () => console.log('Client disconnected\r\n'));
 	client.on('data', (data) => {
-		// client.on('end', () => console.log('Client disconnected\r\n'));
 		fs.appendFile(filename, data + "\r\n", (err) => {
 			if (err)
 			{
@@ -27,104 +36,34 @@ const server = net.createServer((client) => {
 		});
 		if (isConnected)
 		{
-			if (isFiles)
+			if (data === 'ERR')
 			{
-				if (data === 'END')
-				{
-					client.end();
-					counterOfClients -= 1;
-					console.log("end");
-				}
-				else if (data === 'ERR')
-				{
-					console.log("err end");
-					client.end();
-					counterOfClients -= 1;
-				}
-				else
-				{
-					let filePath = defaultDir + "\\" + client.identifier + "\\" + JSON.parse(data)[1];
-					fs.appendFile(filePath, JSON.parse(data)[0] + "\r\n", (err) => {
-						if (err)
-						{
-							throw "Error found: " + err;
-						}
-					});
-					client.write("NEXT");
-				}
-			}
-			else if (isRemote)
-			{
-				let dataArray = data.split(' \"');
-				console.log(dataArray);
-				dataArray[1] = dataArray[1].replace('\"', "");
-				dataArray[2] = dataArray[2].replace('\" ', "");
-				console.log(dataArray);
-				let readFileStream = fs.createReadStream(dataArray[1]);
-				let writeFileStream = fs.createWriteStream(dataArray[2]);
-				if (dataArray[0] === 'COPY')
-				{
-					readFileStream.pipe(writeFileStream);
-					client.write("DONE CLONE");
-					console.log("copied");
-				}
-				else if (dataArray[0] === 'ENCODE')
-				{
-					let cryptoStream = crypto.createCipher(algorithm, dataArray[3]);
-					readFileStream.pipe(cryptoStream).pipe(writeFileStream);
-					console.log("encoded");
-				}
-				else if (dataArray[0] === 'DECODE')
-				{
-					let cryptoStream = crypto.createDecipher(algorithm, dataArray[3]);
-					readFileStream.pipe(cryptoStream).pipe(writeFileStream);
-					console.log("decoded");
-				}
-				isRemote = false;
+				console.log("err end");
 				client.end();
+				counterOfClients -= 1;
 			}
 			else
 			{
-				let max = questionAndAnswers.length;
-
-				let rand = max * Math.random();
-				rand = Math.floor(rand);
-
-				console.log(data + " " + questionAndAnswers[rand].answer + "\r\n");
-				let message = '' + questionAndAnswers[rand].answer;
-				client.write(message);
-				fs.appendFile(filename, message + "\r\n", (err) => {
+				let randomID = Math.floor(Math.random() * max);
+				let currentDate = new Date();
+				// let newWorker = new WorkerTCP(randomID, currentDate,)
+				child_process.exec("node worker.js " + filename + " " + data, (err, sysout) =>
+				{
 					if (err)
 					{
-						throw "Error found: " + err;
+						console.error(err);
+						return;
 					}
+					console.log(sysout);
 				});
+				client.end();
 			}
 		}
 		else
 		{
 			let message = "";
-			if (data === 'QA' || data === 'FILES' || data === 'REMOTE')
+			if (data === 'ID')
 			{
-				if (data === 'FILES') {
-					isFiles = true;
-					if (counterOfClients <= maxClients)
-					{
-						counterOfClients += 1;
-					}
-					else
-					{
-						client.end();
-					}
-					fs.mkdir(defaultDir + "\\" + client.identifier, (err) =>
-					{
-						console.log(err);
-					});
-				}
-				if (data === 'REMOTE')
-				{
-					isRemote = true;
-				}
 				isConnected = true;
 				message = "ACK";
 				client.write(message);
