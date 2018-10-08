@@ -2,85 +2,102 @@ const net = require('net');
 const fs = require('fs');
 const child_process = require("child_process");
 
-let WorkerTCP = function(id, startedOn, numbers) {
+let WorkerTCP = function(id, startedOn, filename) {
 	this.id = id;
 	this.startedOn = startedOn;
-	this.numbers = numbers;
+	this.filename = filename;
 };
 
-
+let port = 8124;
+let childProcesses = [];
+let workers = [];
 
 const server = net.createServer((client) => {
 	console.log('Client connected');
-	let max = 10000;
-	client.identifier = Math.floor(Math.random() * max); // unique id
-	let filename = `client_${client.identifier}.json`;
-	fs.writeFile(filename, "", (err) => {
-		if (err)
-		{
-			throw "Error found: " + err;
-		}
-	});
+
 
 	client.setEncoding('utf8');
-	let isConnected = false;
-	let workers = [];
 
 	client.on('end', () => console.log('Client disconnected\r\n'));
 	client.on('data', (data) => {
-		fs.appendFile(filename, data + "\r\n", (err) => {
-			if (err)
-			{
-				throw "Error found: " + err;
-			}
-		});
-		if (isConnected)
-		{
-			if (data === 'ERR')
-			{
-				console.log("err end");
-				client.end();
-				counterOfClients -= 1;
-			}
-			else
-			{
+		console.log(data);
+		if (data === 'ERR') {
+			console.log("err end");
+			client.end();
+		}
+		else {
+			let dataArray = JSON.parse(data);
+			if (dataArray[0] === "NEW") {
+				let max = 10000;
+				client.identifier = Math.floor(Math.random() * max); // unique id
+				let filename = `client_${client.identifier}.json`;
+				fs.writeFile(filename, "", (err) => {
+					if (err) {
+						throw "Error found: " + err;
+					}
+				});
+				let myProcess = [];
+				let myChildProcess = child_process.spawn("node", [ "worker.js", filename, dataArray[1]]);
+
 				let randomID = Math.floor(Math.random() * max);
 				let currentDate = new Date();
-				// let newWorker = new WorkerTCP(randomID, currentDate,)
-				child_process.exec("node worker.js " + filename + " " + data, (err, sysout) =>
+				let newWorker = new WorkerTCP(randomID, currentDate, filename);
+				workers.push(newWorker);
+				let dataToHTTP = [];
+				dataToHTTP.push(newWorker.id, newWorker.startedOn);
+				console.log(dataToHTTP);
+				client.write(JSON.stringify(dataToHTTP));
+
+
+				myProcess.push(randomID);
+				myProcess.push(myChildProcess);
+				childProcesses.push(myProcess);
+			}
+			else if (dataArray[0] === "DEL") {
+				let needRemoveId = 0;
+				for (let i = 0; i < childProcesses.length; i++)
 				{
-					if (err)
+					if (childProcesses[i][0] = dataArray[1])
 					{
-						console.error(err);
-						return;
+						childProcesses[i][1].kill(0);
+						needRemoveId = i;
+						break;
 					}
-					console.log(sysout);
+				}
+				childProcesses.splice(needRemoveId, 1);
+
+				needRemoveId = 0;
+				for (let i = 0; i < workers.length; i++)
+				{
+					console.log(workers[i].id);
+					console.log(dataArray[1]);
+					if (workers[i].id === dataArray[1])
+					{
+						console.log(i);
+						needRemoveId = i;
+						break;
+					}
+				}
+				workers[needRemoveId].numbers = JSON.parse(fs.readFileSync(workers[needRemoveId].filename));
+				client.write(JSON.stringify(workers[needRemoveId]));
+				workers.splice(needRemoveId, 1);
+			}
+			else if (dataArray[0] === "GET") {
+				console.log("GET");
+				workers.forEach((worker) => {
+					console.log('num');
+					let fileData = fs.readFileSync(worker.filename);
+					worker.numbers = JSON.parse(fileData);
+					console.log('num1');
 				});
-				client.end();
+				client.write(JSON.stringify(workers));
 			}
-		}
-		else
-		{
-			let message = "";
-			if (data === 'ID')
-			{
-				isConnected = true;
-				message = "ACK";
-				client.write(message);
-			}
-			else
-			{
+			else {
 				message = "DEC";
 				console.log("disconnect.");
 				client.write(message);
 				client.end();
 			}
-			fs.appendFile(filename, message + "\r\n",  (err) => {
-				if (err)
-				{
-					throw "Error found: " + err;
-				}
-			});
 		}
 	});
 });
